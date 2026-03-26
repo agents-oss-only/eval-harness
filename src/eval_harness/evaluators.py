@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import abc
+import re
+from typing import Optional, Union
 
 
 class Evaluator(abc.ABC):
@@ -93,3 +95,56 @@ class ContainsEvaluator(Evaluator):
         if not self.case_sensitive:
             a, b = a.lower(), b.lower()
         return 1.0 if b in a else 0.0
+
+
+class RegexEvaluator(Evaluator):
+    """Score 1.0 if *output* matches a regex pattern, else 0.0.
+
+    If *pattern* is provided at construction time, it is used for every
+    evaluation call and *expected* is ignored.  If *pattern* is ``None``
+    (the default), *expected* is compiled and used as the pattern on each
+    call — which lets golden datasets store per-sample regex strings.
+
+    Args:
+        pattern: Fixed regex pattern to match against *output*.  When
+            ``None``, *expected* is used as the pattern instead.
+        flags: ``re`` module flags (e.g. ``re.IGNORECASE``).  Defaults to
+            ``0`` (no flags).
+        full_match: If ``True``, requires the entire *output* to match
+            (``re.fullmatch``).  If ``False`` (default), a match anywhere
+            in *output* is sufficient (``re.search``).
+
+    Example::
+
+        # Fixed pattern — check output looks like an ISO date
+        ev = RegexEvaluator(r"^\\d{4}-\\d{2}-\\d{2}$", full_match=True)
+        ev("2024-01-15", "")   # → 1.0
+        ev("January 2024", "")  # → 0.0
+
+        # Per-sample patterns stored in the golden dataset
+        ev = RegexEvaluator()
+        ev("The answer is 42.", r"\\b42\\b")   # → 1.0
+        ev("The answer is 43.", r"\\b42\\b")   # → 0.0
+
+        # Case-insensitive search
+        ev = RegexEvaluator(r"yes|no", flags=re.IGNORECASE)
+        ev("YES", "")  # → 1.0
+    """
+
+    def __init__(
+        self,
+        pattern: Optional[str] = None,
+        *,
+        flags: Union[int, re.RegexFlag] = 0,
+        full_match: bool = False,
+    ) -> None:
+        self._fixed_pattern = re.compile(pattern, flags) if pattern is not None else None
+        self._flags = flags
+        self._full_match = full_match
+
+    def score(self, output: str, expected: str) -> float:
+        compiled = self._fixed_pattern
+        if compiled is None:
+            compiled = re.compile(expected, self._flags)
+        match_fn = compiled.fullmatch if self._full_match else compiled.search
+        return 1.0 if match_fn(output) is not None else 0.0
