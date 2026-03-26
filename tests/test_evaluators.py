@@ -1,7 +1,9 @@
 """Tests for built-in evaluators."""
 
+import re
+
 import pytest
-from eval_harness import ExactMatchEvaluator, ContainsEvaluator
+from eval_harness import ExactMatchEvaluator, ContainsEvaluator, RegexEvaluator
 
 
 class TestExactMatchEvaluator:
@@ -67,3 +69,42 @@ class TestContainsEvaluator:
     def test_callable_interface(self):
         ev = ContainsEvaluator()
         assert ev("hello world", "world") == 1.0
+
+
+class TestRegexEvaluator:
+    def test_fixed_pattern_match(self):
+        ev = RegexEvaluator(r"\d{4}-\d{2}-\d{2}")
+        assert ev("2024-01-15", "") == 1.0
+
+    def test_fixed_pattern_no_match(self):
+        ev = RegexEvaluator(r"\d{4}-\d{2}-\d{2}")
+        assert ev("January 2024", "") == 0.0
+
+    def test_expected_used_as_pattern_when_no_fixed(self):
+        ev = RegexEvaluator()
+        assert ev("The answer is 42.", r"\b42\b") == 1.0
+        assert ev("The answer is 43.", r"\b42\b") == 0.0
+
+    def test_full_match_true(self):
+        ev = RegexEvaluator(r"\d+", full_match=True)
+        assert ev("12345", "") == 1.0
+        assert ev("12345abc", "") == 0.0
+
+    def test_full_match_false_default(self):
+        ev = RegexEvaluator(r"\d+")
+        assert ev("abc 123 def", "") == 1.0
+
+    def test_flags_ignorecase(self):
+        ev = RegexEvaluator(r"yes|no", flags=re.IGNORECASE)
+        assert ev("YES", "") == 1.0
+        assert ev("No", "") == 1.0
+        assert ev("maybe", "") == 0.0
+
+    def test_flags_applied_with_expected_pattern(self):
+        ev = RegexEvaluator(flags=re.IGNORECASE)
+        assert ev("Paris", r"paris") == 1.0
+
+    def test_callable_interface(self):
+        ev = RegexEvaluator(r"\d+")
+        assert ev("abc123", "") == 1.0
+        assert ev("abcdef", "") == 0.0
